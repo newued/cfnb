@@ -16,3 +16,4 @@ cloud/browser-automation/
 wk_*.json
 cloud/final_plain.txt
 cloud/test_sub*.txt
+.run.lock
