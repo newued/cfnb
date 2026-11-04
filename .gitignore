@@ -2,3 +2,17 @@
 git_sync.ps1
 git_sync.sh
 __pycache__/
+新建 文本文档.txt
+cloud/config.local.backup.json
+cloud/browser-automation/tail.js
+cloud/browser-automation/edge-profile/
+cloud/browser-automation/cdp_result.json
+cloud/browser-automation/cdp_run.log
+cloud/*.json
+auto_sub_update.py
+push_github_api.js
+cloud/browser-automation/
+.workbuddy/
+wk_*.json
+cloud/final_plain.txt
+cloud/test_sub*.txt

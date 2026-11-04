@@ -18,6 +18,7 @@ import ssl
 import sys
 import json
 import time
+import base64
 import random
 import socket
 import hashlib
@@ -26,6 +27,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.request import Request, urlopen
 
 # ---------------- 配置 ----------------
+# 生成器版本，用于追溯订阅由哪一版逻辑产出
+GEN_VERSION = "v2026.11.04-1"
 SOURCES = [
     "https://zip.cm.edu.kg/all.txt",
     "https://countrymerge.pages.dev/all.txt",
@@ -240,13 +243,32 @@ def main():
         log(f"延迟过滤跳过：<=2500ms 仅 {len(fast_enough)} 个，放宽标准")
 
     alive.sort(key=lambda n: n["latency"])
-    fastest = alive[:KEEP_FASTEST]
 
-    rest = [n for n in alive if n not in fastest]
-    rest.sort(key=lambda n: stable_hash(n["ip"], seed))
-    picked = fastest + rest[: max(0, NODE_COUNT - len(fastest))]
+    # 采样策略：限制同一 /16 网段数量，避免某一整段在国内不可达时批量失效；
+    # 同时优先选用 Cloudflare 官方段（国内可达性显著优于第三方中转段）。
+    MAX_PER_NET = 2
+    CF_QUOTA = int(NODE_COUNT * 0.65)
+    picked = []
+    net_count = {}
 
-    # 不足则从最快列表补足（允许复用，但优先保持不重复）
+    def fill(pool, stop_at):
+        for n in pool:
+            if len(picked) >= stop_at:
+                return
+            key = ".".join(n["ip"].split(".")[:2])
+            if net_count.get(key, 0) >= MAX_PER_NET:
+                continue
+            if n in picked:
+                continue
+            net_count[key] = net_count.get(key, 0) + 1
+            picked.append(n)
+
+    cf_alive = [n for n in alive if n["cf"]]
+    other_alive = [n for n in alive if not n["cf"]]
+    fill(cf_alive, CF_QUOTA)
+    fill(other_alive, NODE_COUNT)
+
+    # 仍不足时放宽网段约束补齐
     if len(picked) < NODE_COUNT:
         for n in alive:
             if len(picked) >= NODE_COUNT:
@@ -254,13 +276,22 @@ def main():
             if n not in picked:
                 picked.append(n)
 
+    log(f"网段分布：{len(net_count)} 个 /16，单段最多 {MAX_PER_NET} 个；CF 官方段 {sum(1 for n in picked if n['cf'])} 个")
+
     links = [build_link(n, i) for i, n in enumerate(picked)]
     body = "\n".join(links) + "\n"
 
     with open(OUTPUT, "w", encoding="utf-8", newline="\n") as f:
         f.write(body)
 
+    # 同时输出 base64 版本：部分客户端（含旧版 Karing 订阅导入）偏好 base64 编码
+    b64_path = os.path.join(os.path.dirname(os.path.abspath(OUTPUT)) if os.path.dirname(OUTPUT) else ".",
+                            "sub_final_b64.txt")
+    with open(b64_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(base64.b64encode(body.encode("utf-8")).decode("ascii"))
+
     log(f"已写入 {OUTPUT}：{len(links)} 个节点")
+    log(f"已写入 {b64_path}：base64 版本")
     log(f"延迟区间：{alive[0]['latency']}ms ~ {alive[-1]['latency']}ms")
     for n in picked[:5]:
         log(f"  示例 {n['ip']}:{n['port']} {n['latency']}ms status={n['status']}")
