@@ -17,3 +17,4 @@ wk_*.json
 cloud/final_plain.txt
 cloud/test_sub*.txt
 .run.lock
+ip.txt
